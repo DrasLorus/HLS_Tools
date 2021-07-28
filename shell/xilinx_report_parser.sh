@@ -2,7 +2,7 @@
 
 #
 # Copyright© 2021 Camille 'DrasLorus' Monière
-# <draslorus@draslorus.fr> 
+# <draslorus@draslorus.fr>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -29,24 +29,36 @@ fi
 eval set -- "$TEMP"
 unset TEMP
 
-# PROJECT_PATH="./qcsp_emitter"
 PROJECT_PATH=""
-# PROJECT_NAME="$(basename $PROJECT_PATH)"
-# REPORT_RPATH="impl/report/verilog/emmiter_qcsp_export.xml"
 declare -a TYPES=("sim" "hls" "syn" "impl")
 declare -A REPORT_TYPE
 for type in "${TYPES[@]}"; do
   REPORT_TYPE[$type]=0
 done
 
+declare -ga HLS_HEADERS
+HLS_HEADERS=(
+  "unit"
+  "Best-caseLatency"
+  "Average-caseLatency"
+  "Worst-caseLatency"
+  "Best-caseRealTimeLatency"
+  "Average-caseRealTimeLatency"
+  "Worst-caseRealTimeLatency"
+  "Interval-min"
+  "Interval-max"
+)
+## Since Xilinx reports are not consistent, can't simply extract the headers 
+# readarray -t HLS_HEADERS \
+#   <<<"$(xmllint --shell "qcsp_emitter/${ALL_SOLUTION[0]}/$PATH_HLS" \
+#     <<<'du /*/PerformanceEstimates/SummaryOfOverallLatency/*' |
+#     grep -v '>')"
+
 PATH_IMPL="impl/report/verilog"
 SUFFIX_IMPL="_export.xml"
-# PREFIX_SYN
 PATH_HLS="syn/report/csynth.xml"
-# PREFIX_SIM
 
 RESULT_TEXT_FILE=""
-# REPORT_RPATH=""
 declare -i SOLUTION_IDX=0
 declare -i SEPARATED=0
 
@@ -69,21 +81,11 @@ while true; do
 
     echo "Project at $2"
     PROJECT_PATH="$2"
-    declare -g PROJECT_NAME=$(basename "$PROJECT_PATH")
+    declare -g PROJECT_NAME
+    PROJECT_NAME=$(basename "$PROJECT_PATH")
     shift 2
     continue
     ;;
-    # '-r' | '--report-rpath')
-    #     if [[ -n $REPORT_RPATH ]]; then
-    #         echo 'ERROR: Cannot process multiple report rpath.' >&2
-    #         exit 1
-    #     fi
-
-    #     echo "Report path in solution is $2"
-    #     REPORT_RPATH="$2"
-    #     shift 2
-    #     continue
-    #     ;;
   '-o' | '--output')
     if [[ -n $RESULT_TEXT_FILE ]]; then
       echo 'ERROR: Cannot output to multiple files.' >&2
@@ -144,7 +146,7 @@ if [ "$PROJECT_PATH" = "" ]; then
 fi
 
 declare -a ALL_SOLUTION
-echo "$SOLUTION_IDX"
+# echo "$SOLUTION_IDX"
 
 # echo "ls -d "$PROJECT_PATH/*/"  | sort -"
 if ((SOLUTION_IDX == -1)); then
@@ -156,7 +158,7 @@ if ((SOLUTION_IDX == -1)); then
   done
   unset tmp
 else
-  while true; do
+  while (($# != 0)); do
     # echo "$SOLUTION_IDX"
     # echo "${ALL_SOLUTION[@]}"
 
@@ -166,11 +168,12 @@ else
 
     # echo "$SOLUTION_IDX"
     # echo "${ALL_SOLUTION[@]}"
-
-    if (($# == 0)); then
-      break
-    fi
   done
+fi
+
+if ((SOLUTION_IDX == 0)); then
+  echo "ERROR: no solution specified."
+  exit 1
 fi
 
 declare -i SUMT=0
@@ -201,6 +204,8 @@ function write_header() {
         TOP_NAME="$(xmllint --xpath 'string(//TopModelName)' "$PROJECT_PATH/${ALL_SOLUTION[0]}/$PATH_HLS")"
         declare -ga IMPL_RESOURCES_HEAD
         readarray -t IMPL_RESOURCES_HEAD <<<"$(xmllint --shell "$PROJECT_PATH/${ALL_SOLUTION[0]}/$PATH_IMPL/$TOP_NAME$SUFFIX_IMPL" <<<'du profile/AreaReport/Resources/*' | grep -v '>')"
+        declare -ga IMPL_AVAILRES_HEAD
+        readarray -t IMPL_AVAILRES_HEAD <<<"$(xmllint --shell "$PROJECT_PATH/${ALL_SOLUTION[0]}/$PATH_IMPL/$TOP_NAME$SUFFIX_IMPL" <<<'du profile/AreaReport/AvailableResources/*' | grep -v '>')"
         declare -ga IMPL_TIMING_HEAD
         readarray -t IMPL_TIMING_HEAD <<<"$(xmllint --shell "$PROJECT_PATH/${ALL_SOLUTION[0]}/$PATH_IMPL/$TOP_NAME$SUFFIX_IMPL" <<<'du profile/TimingReport/*' | grep -v '>')"
 
@@ -208,11 +213,11 @@ function write_header() {
           printf "%7s " "${rec/\n/}" >>"$OFILE"
         done
 
-        for rec in "${IMPL_RESOURCES_HEAD[@]}"; do
+        for rec in "${IMPL_AVAILRES_HEAD[@]}"; do
           printf "%10s " "${rec/\n/}_avlb" >>"$OFILE"
         done
 
-        for rec in "${IMPL_RESOURCES_HEAD[@]}"; do
+        for rec in "${IMPL_AVAILRES_HEAD[@]}"; do
           printf "%9s " "${rec/\n/}_prc" >>"$OFILE"
         done
 
@@ -226,11 +231,6 @@ function write_header() {
         ;;
 
       'hls')
-        declare -ga HLS_HEADERS
-        readarray -t HLS_HEADERS \
-          <<<"$(xmllint --shell "qcsp_emitter/${ALL_SOLUTION[0]}/$PATH_HLS" \
-            <<<'du /*/PerformanceEstimates/SummaryOfOverallLatency/*' |
-            grep -v '>')"
         printf "%14s %8s %8s %8s %10s %10s %10s %8s %8s " \
           "unit" "BestLat" "AvrgLat" "WrstLat" "BestRT" \
           "AvrgRT" "WrstRT" "IIMin" "IIMax" >>"$OFILE"
@@ -278,7 +278,7 @@ function parse_solutions() {
             fi
           done
 
-          for res in "${IMPL_RESOURCES_HEAD[@]}"; do
+          for res in "${IMPL_AVAILRES_HEAD[@]}"; do
             value="$(xmllint --xpath "string(//AvailableResources/$res)" \
               "$PROJECT_PATH/$solution/$PATH_IMPL/$TOP_NAME$SUFFIX_IMPL" 2>/dev/null)"
             if [[ -z $value ]]; then
@@ -288,7 +288,7 @@ function parse_solutions() {
             fi
           done
 
-          for res in "${IMPL_RESOURCES_HEAD[@]}"; do
+          for res in "${IMPL_AVAILRES_HEAD[@]}"; do
             value="$(xmllint --xpath "string(//Resources/$res * 100.0 div //AvailableResources/$res)" \
               "$PROJECT_PATH/$solution/$PATH_IMPL/$TOP_NAME$SUFFIX_IMPL" 2>/dev/null)"
             if [[ -z $value ]]; then
