@@ -48,7 +48,7 @@ HLS_HEADERS=(
   "Interval-min"
   "Interval-max"
 )
-## Since Xilinx reports are not consistent, can't simply extract the headers 
+## Since Xilinx reports are not consistent, can't simply extract the headers
 # readarray -t HLS_HEADERS \
 #   <<<"$(xmllint --shell "qcsp_emitter/${ALL_SOLUTION[0]}/$PATH_HLS" \
 #     <<<'du /*/PerformanceEstimates/SummaryOfOverallLatency/*' |
@@ -259,7 +259,7 @@ function parse_solutions() {
 
   for solution in "${ALL_SOLUTION[@]}"; do
 
-    printf "%2d " "$i" >>"$1"
+    printf "%02d " "$i" >>"$1"
 
     for rt in "${TYPES[@]}"; do
       if [ "${REPORT_TYPE[$rt]}" = "1" ]; then
@@ -327,13 +327,31 @@ function parse_solutions() {
               if [[ -z $value ]]; then
                 printf "%14s " "-1" >>"$1"
               else
-                printf "%14s " "$value" >>"$1"
+                printf "%14s " "\"$value\"" >>"$1"
               fi
             elif [ "$val" = "Average-caseRealTimeLatency" ] || [ "$val" = "Worst-caseRealTimeLatency" ] || [ "$val" = "Best-caseRealTimeLatency" ]; then
               if [[ -z $value ]]; then
                 printf "%10s " "-1" >>"$1"
               else
-                printf "%10s " "$value" >>"$1"
+                suffix="$(echo "$value" | cut -d ' ' -f 2 -)"
+                number="$(echo "$value" | cut -d ' ' -f 1 -)"
+                case "$suffix" in
+                "ms")
+                  suffix="e-3"
+                  ;;
+                "us")
+                  suffix="e-6"
+                  ;;
+                "ns")
+                  suffix="e-9"
+                  ;;
+                *)
+                  echo "ERROR: unknown unit for $val."
+                  exit 1
+                  ;;
+                esac
+                printf "%10.4e" "$number$suffix" >>"$1"
+                # printf "%10s " "$value" >>"$1"
               fi
             else
               if [[ -z $value ]]; then
